@@ -1,0 +1,55 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #f5f4f0;
+  --bg2: #ffffff;
+  --text: #1a1a18;
+  --muted: #6b6a65;
+  --border: rgba(0, 0, 0, 0.1);
+  --accent: #1d6b56;
+  --accent2: #b8860b;
+  --danger: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1a;
+    --bg2: #2a2a27;
+    --text: #e8e6df;
+    --muted: #9c9a92;
+    --border: rgba(255, 255, 255, 0.1);
+  }
+}
+
+body {
+  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, select, button {
+  font-family: inherit;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npx next:*)",
+      "Bash(printf \"testing output\")",
+      "Bash(node -e \"console.log\\(''hello from node''\\)\")",
+      "Bash(where node:*)",
+      "Bash(cmd //c \"where node\")",
+      "Bash(\"C:/Users/admin/OneDrive - VUBM/Desktop/claude-code/immo-kalkulator/test_output.txt\")",
+      "Bash(npm --version)",
+      "Bash(npx --version)"
+    ]
+  }
+}
