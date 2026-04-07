@@ -47,7 +47,7 @@ const defaultInputs = () => ({
   nettomieteOptMonat: 1000,
   hausgeldMonat: 200,
   umlegbareBK: 150,
-  grunderwerbsteuersatz: 0.06,
+  grunderwerbsteuersatz: 0.05,
   steuersatz: 0.42,
   gebaeudewertanteil: 0.7,
   afaProzent: 0.02,
@@ -100,6 +100,7 @@ function berechne(inp) {
   const bruttomietePA = nettomietePA + bkPA;
   const bruttomieteLeerstand = bruttomietePA * (1 - inp.leerstandsrisiko);
   const mietcashflow = bruttomieteLeerstand - hausgeldPA - verwaltungPA - reparaturPA;
+  const bruttomietrendite = bruttomietePA / inp.kaufpreis;
 
   const mietrenditeMakler = nettomietePA / inp.kaufpreis;
   const faktorMakler = inp.kaufpreis / nettomietePA;
@@ -232,6 +233,8 @@ function berechne(inp) {
     cashOutflows,
     jahre,
     gebaeudewert,
+    bruttomietrendite,
+    bruttomietePA,
     grestBasis,
     zielKP5Aktuell,
     zielKP6Aktuell,
@@ -265,56 +268,64 @@ const KPICard = ({ label, value, sub, accent }) => (
   </div>
 );
 
-const Field = ({ label, value, onChange, suffix, type = "number", step, min, hint, wide }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: wide ? 240 : 140, flex: wide ? "1 1 240px" : "1 1 140px" }}>
-    <label style={{ fontSize: 11, color: "var(--muted)", letterSpacing: ".02em" }}>{label}</label>
-    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      {type === "select" ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            flex: 1,
-            padding: "7px 10px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--bg)",
-            color: "var(--text)",
-            fontSize: 13,
-          }}
-        >
-          {hint?.map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
-      ) : (
-        <input
-          type={type}
-          value={type === "number" ? value : value}
-          onChange={(e) =>
-            onChange(type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)
-          }
-          step={step}
-          min={min}
-          style={{
-            flex: 1,
-            padding: "7px 10px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--bg)",
-            color: "var(--text)",
-            fontSize: 13,
-            fontFeatureSettings: '"tnum"',
-            minWidth: 0,
-          }}
-        />
-      )}
-      {suffix && (
-        <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{suffix}</span>
-      )}
+const Field = ({ label, value, onChange, suffix, type = "number", step, min, hint, wide, pct }) => {
+  const displayVal = type === "number" && pct ? parseFloat((value * 100).toFixed(6)) : value;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: wide ? 240 : 140, flex: wide ? "1 1 240px" : "1 1 140px" }}>
+      <label style={{ fontSize: 11, color: "var(--muted)", letterSpacing: ".02em" }}>{label}</label>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {type === "select" ? (
+          <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "7px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+              color: "var(--text)",
+              fontSize: 13,
+            }}
+          >
+            {hint?.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type={type}
+            value={displayVal}
+            onChange={(e) => {
+              if (type === "number") {
+                const raw = parseFloat(e.target.value) || 0;
+                onChange(pct ? parseFloat((raw / 100).toFixed(6)) : raw);
+              } else {
+                onChange(e.target.value);
+              }
+            }}
+            step={step}
+            min={min}
+            style={{
+              flex: 1,
+              padding: "7px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+              color: "var(--text)",
+              fontSize: 13,
+              fontFeatureSettings: '"tnum"',
+              minWidth: 0,
+            }}
+          />
+        )}
+        {suffix && (
+          <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{suffix}</span>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Section = ({ title, children, color = "var(--accent)" }) => (
   <div style={{ marginBottom: 20 }}>
@@ -839,8 +850,37 @@ Nur das JSON-Objekt, nichts anderes.`,
                 </div>
               </div>
             </div>
+            {/* Rechenweg */}
+            <div style={{ marginTop: 14, padding: "12px 14px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#8e44ad" }}>Rechenweg</div>
+              <div style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 16px" }}>
+                {[
+                  ["Nettokaltmiete p.a.", fmtEur(result.nettomietePA)],
+                  ["+ Umlegbare BK p.a.", fmtEur(inputs.umlegbareBK * 12)],
+                  ["= Bruttomiete p.a.", fmtEur(result.bruttomietePA)],
+                  null,
+                  ["Bruttomietrendite", `${fmtEur(result.bruttomietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.bruttomietrendite)}`],
+                  ["Nettomietrendite (Makler)", `${fmtEur(result.nettomietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.mietrenditeMakler)}`],
+                  ["Nettomietrendite (Real)", `${fmtEur(result.nettomietePA)} / ${fmtEur(result.gesamtinvestment)} = ${fmtPct(result.mietrenditeReal)}`],
+                  null,
+                  ["NK-Faktor (%-Kosten)", fmtPct(inputs.grunderwerbsteuersatz + inputs.maklerkostenPct + inputs.notarkostenPct)],
+                  ["Fixe Nebenkosten", fmtEur(inputs.beleihungsgebuehren + inputs.finanzierungsmakler + inputs.sonstigeNebenkosten + inputs.sanierungskosten + inputs.sonderumlagen)],
+                  null,
+                  ["Formel Zielkaufpreis", "Miete / Zielrendite − fixe NK) / (1 + NK-Faktor)"],
+                ].map((row, i) =>
+                  row ? (
+                    <div key={i} style={{ display: "contents" }}>
+                      <span style={{ color: "var(--muted)", padding: "2px 0", borderBottom: "1px solid var(--border)" }}>{row[0]}</span>
+                      <span style={{ textAlign: "right", fontWeight: 500, fontFeatureSettings: '"tnum"', padding: "2px 0", borderBottom: "1px solid var(--border)" }}>{row[1]}</span>
+                    </div>
+                  ) : (
+                    <div key={i} style={{ display: "contents" }}><div style={{ height: 6 }} /><div /></div>
+                  )
+                )}
+              </div>
+            </div>
             <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 10, fontStyle: "italic" }}>
-              Aktueller Kaufpreis: {fmtEur(inputs.kaufpreis)} — aktuelle Rendite: {fmtPct(result.mietrenditeReal)}
+              Aktueller Kaufpreis: {fmtEur(inputs.kaufpreis)} — Bruttomietrendite: {fmtPct(result.bruttomietrendite)} — Nettomietrendite: {fmtPct(result.mietrenditeReal)}
             </div>
           </div>
 
@@ -853,6 +893,9 @@ Nur das JSON-Objekt, nichts anderes.`,
                 ["Kaufnebenkosten", fmtEur(result.kaufnebenkosten)],
                 ["Gesamtinvestment", fmtEur(result.gesamtinvestment)],
                 ["Eigenkapital", fmtEur(result.eigenkapital)],
+                ["Nettokaltmiete / Monat", fmtEur(inputs.nettomieteMonat)],
+                ["Umlegbare BK / Monat", fmtEur(inputs.umlegbareBK)],
+                ["Hausgeld / Monat", fmtEur(inputs.hausgeldMonat)],
                 ["Kredit", fmtEur(inputs.kredithoehe)],
                 ["Kreditrate / Jahr", fmtEur(result.kreditrate)],
                 ["Grunderwerbsteuer", fmtEur(result.grunderwerbsteuer)],
@@ -939,15 +982,15 @@ Nur das JSON-Objekt, nichts anderes.`,
           </Section>
 
           <Section title="Steuern & Abschreibung" color="#8e44ad">
-            <Field label="GrESt-Satz" value={inputs.grunderwerbsteuersatz} onChange={set("grunderwerbsteuersatz")} step={0.005} suffix="%" />
-            <Field label="Persönl. Steuersatz" value={inputs.steuersatz} onChange={set("steuersatz")} step={0.01} suffix="%" />
-            <Field label="Gebäudewertanteil" value={inputs.gebaeudewertanteil} onChange={set("gebaeudewertanteil")} step={0.05} />
-            <Field label="AfA-Satz" value={inputs.afaProzent} onChange={set("afaProzent")} step={0.005} suffix="%" />
+            <Field label="GrESt-Satz" value={inputs.grunderwerbsteuersatz} onChange={set("grunderwerbsteuersatz")} step={0.5} suffix="%" pct />
+            <Field label="Persönl. Steuersatz" value={inputs.steuersatz} onChange={set("steuersatz")} step={1} suffix="%" pct />
+            <Field label="Gebäudewertanteil" value={inputs.gebaeudewertanteil} onChange={set("gebaeudewertanteil")} step={5} suffix="%" pct />
+            <Field label="AfA-Satz" value={inputs.afaProzent} onChange={set("afaProzent")} step={0.5} suffix="%" pct />
           </Section>
 
           <Section title="Kaufnebenkosten" color="#e67e22">
-            <Field label="Maklerkosten inkl. USt" value={inputs.maklerkostenPct} onChange={set("maklerkostenPct")} step={0.005} suffix={`% = ${fmtEur(result.maklerkosten)}`} />
-            <Field label="Notarkosten inkl. USt" value={inputs.notarkostenPct} onChange={set("notarkostenPct")} step={0.001} suffix={`% = ${fmtEur(result.notarkosten)}`} />
+            <Field label="Maklerkosten inkl. USt" value={inputs.maklerkostenPct} onChange={set("maklerkostenPct")} step={0.5} suffix={`% = ${fmtEur(result.maklerkosten)}`} pct />
+            <Field label="Notarkosten inkl. USt" value={inputs.notarkostenPct} onChange={set("notarkostenPct")} step={0.1} suffix={`% = ${fmtEur(result.notarkosten)}`} pct />
             <Field label="Beleihungsgebühren" value={inputs.beleihungsgebuehren} onChange={set("beleihungsgebuehren")} suffix="€" />
             <Field label="Finanzierungsmakler" value={inputs.finanzierungsmakler} onChange={set("finanzierungsmakler")} suffix="€" />
             <Field label="Sonstige Nebenkosten" value={inputs.sonstigeNebenkosten} onChange={set("sonstigeNebenkosten")} suffix="€" />
@@ -955,21 +998,21 @@ Nur das JSON-Objekt, nichts anderes.`,
 
           <Section title="Finanzierung" color="#c0392b">
             <Field label="Kredithöhe" value={inputs.kredithoehe} onChange={set("kredithoehe")} suffix="€" />
-            <Field label="Anfangstilgung p.a." value={inputs.anfangstilgung} onChange={set("anfangstilgung")} step={0.005} suffix="%" />
-            <Field label="Zinssatz p.a." value={inputs.zinssatz} onChange={set("zinssatz")} step={0.0025} suffix="%" />
-            <Field label="EZB Referenzzins" value={inputs.ezb} onChange={set("ezb")} step={0.0025} suffix="%" />
+            <Field label="Anfangstilgung p.a." value={inputs.anfangstilgung} onChange={set("anfangstilgung")} step={0.5} suffix="%" pct />
+            <Field label="Zinssatz p.a." value={inputs.zinssatz} onChange={set("zinssatz")} step={0.25} suffix="%" pct />
+            <Field label="EZB Referenzzins" value={inputs.ezb} onChange={set("ezb")} step={0.25} suffix="%" pct />
             <Field label="Fixzinsbindung" value={inputs.fixzinsbindung} onChange={set("fixzinsbindung")} suffix="Jahre" />
           </Section>
 
           <Section title="Verwaltung & Risiko" color="#16a085">
             <Field label="Verwaltung / Monat" value={inputs.verwaltungMonat} onChange={set("verwaltungMonat")} suffix="€" />
-            <Field label="Leerstandsrisiko" value={inputs.leerstandsrisiko} onChange={set("leerstandsrisiko")} step={0.01} />
+            <Field label="Leerstandsrisiko" value={inputs.leerstandsrisiko} onChange={set("leerstandsrisiko")} step={1} suffix="%" pct />
             <Field label="Reparatur / Monat" value={inputs.reparaturMonat} onChange={set("reparaturMonat")} suffix="€" />
           </Section>
 
           <Section title="Zukunftsaussicht" color="#2c3e50">
-            <Field label="Mietsteigerung p.a." value={inputs.mietsteigerung} onChange={set("mietsteigerung")} step={0.005} />
-            <Field label="Wertsteigerung p.a." value={inputs.wertsteigerung} onChange={set("wertsteigerung")} step={0.005} />
+            <Field label="Mietsteigerung p.a." value={inputs.mietsteigerung} onChange={set("mietsteigerung")} step={0.5} suffix="%" pct />
+            <Field label="Wertsteigerung p.a." value={inputs.wertsteigerung} onChange={set("wertsteigerung")} step={0.5} suffix="%" pct />
             <Field label="Haltedauer" value={inputs.haltedauer} onChange={set("haltedauer")} suffix="Jahre" min={1} />
           </Section>
 
@@ -1000,6 +1043,7 @@ Nur das JSON-Objekt, nichts anderes.`,
             <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 16px" }}>
               {[
                 ["Nettomiete p.a. (nach Leerstand)", fmtEur(result.nettomietePA * (1 - inputs.leerstandsrisiko))],
+                ["+ Umlegbare BK p.a. (nach Leerstand)", fmtEur(inputs.umlegbareBK * 12 * (1 - inputs.leerstandsrisiko))],
                 ["– Hausgeld p.a.", fmtEur(result.hausgeldPA)],
                 ["– AfA Gebäude", fmtEur(result.afaGebaeude)],
                 ["– AfA Möbel (5 J.)", fmtEur(result.afaMoebel)],
@@ -1029,7 +1073,10 @@ Nur das JSON-Objekt, nichts anderes.`,
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--accent)" }}>Cashflow-Berechnung (Jahr 1)</div>
             <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 16px" }}>
               {[
-                ["Summe Einnahmen", fmtEur(result.cashInflows)],
+                ["Nettomiete p.a. (nach Leerstand)", fmtEur(result.nettomietePA * (1 - inputs.leerstandsrisiko))],
+                ["+ Umlegbare BK p.a. (nach Leerstand)", fmtEur(inputs.umlegbareBK * 12 * (1 - inputs.leerstandsrisiko))],
+                ["= Summe Einnahmen", fmtEur(result.cashInflows)],
+                null,
                 ["– Hausgeld", fmtEur(result.hausgeldPA)],
                 ["– Reparatur", fmtEur(inputs.reparaturMonat * 12)],
                 ["– Verwaltung", fmtEur(inputs.verwaltungMonat * 12)],
