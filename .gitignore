@@ -4,5 +4,4 @@ node_modules/
 .env.local
 .vercel
 *.txt
-
-.vercel
+.claude/settings.local.json

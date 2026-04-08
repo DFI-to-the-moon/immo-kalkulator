@@ -72,7 +72,9 @@ const defaultInputs = () => ({
 // ─── Calculation Engine ───
 function berechne(inp) {
   const kaufpreisOhneMoebel = inp.kaufpreis - inp.moebel;
-  const grestBasis = kaufpreisOhneMoebel - inp.instandhaltungsruecklage;
+  const anteiligIHR = inp.instandhaltungsruecklage * inp.anteil;
+  const anteiligSonderumlagen = inp.sonderumlagen * inp.anteil;
+  const grestBasis = kaufpreisOhneMoebel - anteiligIHR;
   const grunderwerbsteuer = grestBasis * inp.grunderwerbsteuersatz;
 
   const maklerkosten = inp.kaufpreis * inp.maklerkostenPct;
@@ -87,7 +89,7 @@ function berechne(inp) {
     inp.sonstigeNebenkosten;
 
   const gesamtinvestment =
-    inp.kaufpreis + kaufnebenkosten + inp.sanierungskosten + inp.sonderumlagen;
+    inp.kaufpreis + kaufnebenkosten + inp.sanierungskosten + anteiligSonderumlagen;
   const eigenkapital = gesamtinvestment - inp.kredithoehe;
 
   const nettomietePA = inp.nettomieteMonat * 12;
@@ -97,20 +99,23 @@ function berechne(inp) {
   const verwaltungPA = inp.verwaltungMonat * 12;
   const reparaturPA = inp.reparaturMonat * 12;
 
-  const bruttomietePA = nettomietePA + bkPA;
+  const bruttokaltmietePA = nettomietePA; // Eingabe "Nettomiete" = Bruttokaltmiete
+  const bruttomietePA = bruttokaltmietePA + bkPA;
+  const nettokaltmietePA = bruttokaltmietePA + bkPA - hausgeldPA;
   const bruttomieteLeerstand = bruttomietePA * (1 - inp.leerstandsrisiko);
   const mietcashflow = bruttomieteLeerstand - hausgeldPA - verwaltungPA - reparaturPA;
-  const bruttomietrendite = bruttomietePA / inp.kaufpreis;
+  const kaufpreisPlusSanierung = inp.kaufpreis + inp.sanierungskosten + anteiligSonderumlagen;
+  const bruttomietrendite = bruttokaltmietePA / kaufpreisPlusSanierung;
 
-  const mietrenditeMakler = nettomietePA / inp.kaufpreis;
-  const faktorMakler = inp.kaufpreis / nettomietePA;
-  const mietrenditeReal = nettomietePA / gesamtinvestment;
-  const faktorReal = gesamtinvestment / nettomietePA;
+  const mietrenditeMakler = nettokaltmietePA / kaufpreisPlusSanierung;
+  const faktorMakler = kaufpreisPlusSanierung / nettokaltmietePA;
+  const mietrenditeReal = nettokaltmietePA / gesamtinvestment;
+  const faktorReal = gesamtinvestment / nettokaltmietePA;
   const preisProM2 = inp.kaufpreis / inp.nettoflaeche;
   const mieteProM2 = inp.nettomieteMonat / inp.nettoflaeche;
 
   // Steuerberechnung
-  const gebaeudewert = (inp.kaufpreis + kaufnebenkosten) * inp.gebaeudewertanteil;
+  const gebaeudewert = (inp.kaufpreis - inp.moebel + kaufnebenkosten) * inp.gebaeudewertanteil;
   const afaGebaeude = gebaeudewert * inp.afaProzent;
   const afaMoebel = inp.moebel > 0 ? inp.moebel / 5 : 0;
   const zinsenJahr1 = inp.kredithoehe * inp.zinssatz;
@@ -131,8 +136,10 @@ function berechne(inp) {
   const cashOutflows = hausgeldPA + reparaturPA + verwaltungPA + kreditrate + Math.max(0, steuerBelastungOhneMoebel);
   const nettocashflow = cashInflows - cashOutflows;
 
-  // EK-Rendite
-  const ekRendite = eigenkapital > 0 ? mietcashflow / eigenkapital : 0;
+  // EK-Rendite (Leverage-Formel: (Gesamtinvestment × Rendite − Kredit × Zinssatz) / EK)
+  const ekRendite = eigenkapital > 0
+    ? (gesamtinvestment * mietrenditeReal - inp.kredithoehe * inp.zinssatz) / eigenkapital
+    : 0;
 
   // 30-Jahres-Verlauf
   const jahre = [];
@@ -149,14 +156,16 @@ function berechne(inp) {
 
     const afaMoebelJ = j <= 5 ? afaMoebel : 0;
     const zinsAbzug = zins;
+    const steig = Math.pow(1 + inp.mietsteigerung, j - 1);
     const stBemessung =
-      nettomietePA * Math.pow(1 + inp.mietsteigerung, j - 1) * (1 - inp.leerstandsrisiko) -
-      hausgeldPA * Math.pow(1 + inp.mietsteigerung, j - 1) * 0 -
+      nettomietePA * steig * (1 - inp.leerstandsrisiko) +
+      bkPA * steig * (1 - inp.leerstandsrisiko) -
+      hausgeldPA * steig -
       afaGebaeude -
       afaMoebelJ -
       zinsAbzug -
-      verwaltungPA * Math.pow(1 + inp.mietsteigerung, j - 1) -
-      reparaturPA * Math.pow(1 + inp.mietsteigerung, j - 1);
+      verwaltungPA * steig -
+      reparaturPA * steig;
     const steuern = stBemessung * inp.steuersatz;
 
     const cfNachSteuern = cfVorSteuern - Math.max(0, steuern);
@@ -164,7 +173,7 @@ function berechne(inp) {
     const wertWohnung = inp.kaufpreis * Math.pow(1 + inp.wertsteigerung, j);
     const wertzuwachs = j === 1 ? 0 : inp.kaufpreis * Math.pow(1 + inp.wertsteigerung, j) - inp.kaufpreis * Math.pow(1 + inp.wertsteigerung, j - 1);
 
-    const abschreibungKNK = j <= 20 ? -(kaufnebenkosten + inp.sonderumlagen) / 20 : 0;
+    const abschreibungKNK = j <= inp.haltedauer ? -(kaufnebenkosten + anteiligSonderumlagen) / inp.haltedauer : 0;
 
     const vermoegenszuwachs = cfNachSteuern + tilgung + wertzuwachs + abschreibungKNK;
     const pctEK = eigenkapital > 0 ? vermoegenszuwachs / eigenkapital : 0;
@@ -235,6 +244,8 @@ function berechne(inp) {
     gebaeudewert,
     bruttomietrendite,
     bruttomietePA,
+    bruttokaltmietePA,
+    nettokaltmietePA,
     grestBasis,
     zielKP5Aktuell,
     zielKP6Aktuell,
@@ -520,25 +531,23 @@ export default function ImmobilienKalkulator() {
         r.readAsDataURL(file);
       });
 
-      setUploadStatus("Daten werden extrahiert...");
+      const fileSizeMB = (base64.length * 0.75 / 1024 / 1024).toFixed(1);
+      setUploadStatus(`Daten werden extrahiert... (${fileSizeMB} MB)`);
 
-      const response = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "document",
-                  source: { type: "base64", media_type: "application/pdf", data: base64 },
-                },
-                {
-                  type: "text",
-                  text: `Extrahiere aus diesem Immobilien-Exposé alle relevanten Daten. Antworte NUR mit einem JSON-Objekt (kein Markdown, keine Backticks) mit folgenden Feldern (lasse Felder weg, die du nicht findest):
+      const reqBody = JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: base64 },
+              },
+              {
+                type: "text",
+                text: `Extrahiere aus diesem Immobilien-Exposé alle relevanten Daten. Antworte NUR mit einem JSON-Objekt (kein Markdown, keine Backticks) mit folgenden Feldern (lasse Felder weg, die du nicht findest):
 {
   "adresse": "Straße Hausnummer",
   "stadt": "Stadt",
@@ -556,15 +565,50 @@ export default function ImmobilienKalkulator() {
   "baujahr": Baujahr
 }
 Nur das JSON-Objekt, nichts anderes.`,
-                },
-              ],
-            },
-          ],
-        }),
+              },
+            ],
+          },
+        ],
       });
 
+      const bodySizeMB = (new Blob([reqBody]).size / 1024 / 1024).toFixed(1);
+      console.log(`[Upload] PDF: ${fileSizeMB} MB, Request-Body: ${bodySizeMB} MB`);
+
+      // API-Key vom Server holen, dann direkt an Anthropic senden
+      // (umgeht Vercels 4.5 MB Body-Limit)
+      const keyRes = await fetch("/api/key");
+      if (!keyRes.ok) throw new Error("API-Key konnte nicht geladen werden");
+      const { key: apiKey } = await keyRes.json();
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: reqBody,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[Upload] HTTP ${response.status}: ${errText}`);
+        throw new Error(`Server-Fehler ${response.status}: ${errText.substring(0, 200)}`);
+      }
+
       const data = await response.json();
+      console.log("[Upload] API-Antwort:", JSON.stringify(data).substring(0, 500));
+
+      if (data.error) {
+        throw new Error(`API-Fehler: ${data.error}`);
+      }
+
       const text = data.content?.map((c) => c.text || "").join("") || "";
+      if (!text) {
+        throw new Error("Keine Antwort von der API erhalten");
+      }
+
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
 
@@ -589,16 +633,21 @@ Nur das JSON-Objekt, nichts anderes.`,
         if (parsed.hausgeldMonat) next.hausgeldMonat = parsed.hausgeldMonat;
         if (parsed.umlegbareBK) next.umlegbareBK = parsed.umlegbareBK;
         if (parsed.sanierungskosten) next.sanierungskosten = parsed.sanierungskosten;
-        if (parsed.maklerkostenPct) next.maklerkostenPct = parsed.maklerkostenPct;
-        else if (parsed.maklerkosten && next.kaufpreis > 0) next.maklerkostenPct = parsed.maklerkosten / next.kaufpreis;
+        if (parsed.maklerkostenPct) {
+          next.maklerkostenPct = parsed.maklerkostenPct > 1 ? parsed.maklerkostenPct / 100 : parsed.maklerkostenPct;
+        } else if (parsed.maklerkosten && next.kaufpreis > 0) {
+          next.maklerkostenPct = parsed.maklerkosten / next.kaufpreis;
+        }
         return next;
       });
 
       setUploadStatus(`Daten erfolgreich extrahiert!`);
       setTimeout(() => setUploadStatus(""), 3000);
     } catch (err) {
-      setUploadStatus("Fehler bei der Extraktion. Bitte manuell eingeben.");
-      setTimeout(() => setUploadStatus(""), 4000);
+      console.error("[Upload] Fehler:", err);
+      const msg = err.message || "Unbekannter Fehler";
+      setUploadStatus(`Fehler: ${msg}`);
+      setTimeout(() => setUploadStatus(""), 10000);
     } finally {
       setUploading(false);
     }
@@ -855,13 +904,14 @@ Nur das JSON-Objekt, nichts anderes.`,
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#8e44ad" }}>Rechenweg</div>
               <div style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 16px" }}>
                 {[
-                  ["Nettokaltmiete p.a.", fmtEur(result.nettomietePA)],
+                  ["Bruttokaltmiete p.a.", fmtEur(result.bruttokaltmietePA)],
                   ["+ Umlegbare BK p.a.", fmtEur(inputs.umlegbareBK * 12)],
-                  ["= Bruttomiete p.a.", fmtEur(result.bruttomietePA)],
+                  ["– Hausgeld p.a.", fmtEur(result.hausgeldPA)],
+                  ["= Nettokaltmiete p.a.", fmtEur(result.nettokaltmietePA)],
                   null,
-                  ["Bruttomietrendite", `${fmtEur(result.bruttomietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.bruttomietrendite)}`],
-                  ["Nettomietrendite (Makler)", `${fmtEur(result.nettomietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.mietrenditeMakler)}`],
-                  ["Nettomietrendite (Real)", `${fmtEur(result.nettomietePA)} / ${fmtEur(result.gesamtinvestment)} = ${fmtPct(result.mietrenditeReal)}`],
+                  ["Bruttomietrendite", `${fmtEur(result.bruttokaltmietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.bruttomietrendite)}`],
+                  ["Nettomietrendite (Makler)", `${fmtEur(result.nettokaltmietePA)} / ${fmtEur(inputs.kaufpreis)} = ${fmtPct(result.mietrenditeMakler)}`],
+                  ["Nettomietrendite (Real)", `${fmtEur(result.nettokaltmietePA)} / ${fmtEur(result.gesamtinvestment)} = ${fmtPct(result.mietrenditeReal)}`],
                   null,
                   ["NK-Faktor (%-Kosten)", fmtPct(inputs.grunderwerbsteuersatz + inputs.maklerkostenPct + inputs.notarkostenPct)],
                   ["Fixe Nebenkosten", fmtEur(inputs.beleihungsgebuehren + inputs.finanzierungsmakler + inputs.sonstigeNebenkosten + inputs.sanierungskosten + inputs.sonderumlagen)],
